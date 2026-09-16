@@ -26,47 +26,56 @@ There is no persistent helper process. The service keeps state inside Omarchy's
 existing shell and runs a short-lived Python command on startup, on each click,
 and when Hyprland reloads its configuration.
 
-## Local installation
+## Installation
 
-Run from the project directory. The destination must not already exist.
-
-```bash
-omarchy plugin validate "$PWD"
-mkdir -p ~/.config/omarchy/plugins
-ln -sT "$PWD" ~/.config/omarchy/plugins/erning.keylid
-omarchy shell shell rescanPlugins
-omarchy plugin enable erning.keylid --after omarchy.indicators
-```
-
-Reload after editing:
-
-```bash
-omarchy shell shell rescanPlugins
-```
-
-To install from Git and place Keylid immediately after the indicators, to the
-left of the clock:
+Run these commands in a terminal to install from Git and place Keylid immediately
+after the indicators, to the left of the clock:
 
 ```bash
 omarchy plugin add https://github.com/erning/omarchy-plugin-keylid.git
 omarchy plugin enable erning.keylid --after omarchy.indicators
 ```
 
-The `add` command may offer to enable the plugin and choose a bar section; the
-following `enable` command sets its exact position. `add --enable` alone uses
-Omarchy's default position within the center section, which may be to the right
-of the clock. To reposition an existing installation, use the same `enable`
-command with `--after omarchy.indicators`.
+The `add` command clones the repository into
+`~/.config/omarchy/plugins/erning.keylid` and validates the plugin. Follow its
+confirmation prompts. It may also offer to enable the plugin and choose a bar
+section; the following `enable` command sets its exact position. `add --enable`
+alone uses Omarchy's default position within the center section, which may be to
+the right of the clock. To reposition an existing installation, use the same
+`enable` command with `--after omarchy.indicators`.
 
-Update a Git installation with `omarchy plugin update erning.keylid`.
+### Update
 
-## Disable or uninstall
+Update an existing Git installation:
+
+```bash
+omarchy plugin update erning.keylid
+```
+
+### Disable or re-enable
+
+Disable the plugin while keeping it installed:
 
 ```bash
 omarchy plugin disable erning.keylid
-omarchy plugin enable erning.keylid
+```
+
+Re-enable it in the same position:
+
+```bash
+omarchy plugin enable erning.keylid --after omarchy.indicators
+```
+
+### Uninstall
+
+Remove the plugin:
+
+```bash
 omarchy plugin remove erning.keylid
 ```
+
+Confirm the removal when prompted. The command disables the plugin if it is
+enabled and deletes its installed Git checkout.
 
 Disabling or removing the plugin makes one best-effort attempt to enable the
 keyboard. Removing a symlink installation only removes the link; the project
@@ -105,6 +114,25 @@ Equivalent direct recovery command:
 
 ```bash
 hyprctl eval 'hl.device({ name = "apple-inc.-apple-internal-keyboard-/-trackpad", enabled = true }); hl.device({ name = "apple-spi-keyboard", enabled = true })'
+```
+
+## Local development installation
+
+To load directly from a local checkout, run from the project directory. The
+destination must not already exist.
+
+```bash
+omarchy plugin validate "$PWD"
+mkdir -p ~/.config/omarchy/plugins
+ln -sT "$PWD" ~/.config/omarchy/plugins/erning.keylid
+omarchy shell shell rescanPlugins
+omarchy plugin enable erning.keylid --after omarchy.indicators
+```
+
+Reload after editing:
+
+```bash
+omarchy shell shell rescanPlugins
 ```
 
 ## Development checks
