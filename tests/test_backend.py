@@ -14,15 +14,20 @@ spec = importlib.util.spec_from_file_location("keylid_backend", ROOT / "backend.
 backend = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(backend)
 
+USB_KEYBOARD = "apple-inc.-apple-internal-keyboard-/-trackpad"
+SPI_KEYBOARD = "apple-spi-keyboard"
+SUPPORTED_KEYBOARDS = (USB_KEYBOARD, SPI_KEYBOARD)
+
 FAKE_HYPRCTL = r'''#!/usr/bin/env python3
-import json, os, pathlib, sys, time
+import json, os, pathlib, re, sys, time
 root = pathlib.Path(os.environ["KEYLID_TEST_STATE"])
 if sys.argv[1] == "devices":
     print((root / "devices.json").read_text())
 elif sys.argv[1] == "eval":
     enabled = "enabled = true" in sys.argv[2]
+    devices = re.findall(r'name = "([^"]+)"', sys.argv[2])
     with (root / "commands.jsonl").open("a") as f:
-        f.write(json.dumps({"enabled": enabled, "lua": sys.argv[2]}) + "\n")
+        f.write(json.dumps({"enabled": enabled, "devices": devices, "lua": sys.argv[2]}) + "\n")
     if not enabled and (root / "delay").exists():
         time.sleep(float((root / "delay").read_text()))
     (root / "enabled").write_text(str(enabled))
@@ -45,7 +50,7 @@ class BackendCommandTests(unittest.TestCase):
         fake.write_text(FAKE_HYPRCTL)
         fake.chmod(0o755)
         self.devices([
-            backend.DEVICE, "keychron-k8-keychron-k8", "apple-inc.-touch-bar-display"
+            USB_KEYBOARD, "keychron-k8-keychron-k8", "apple-inc.-touch-bar-display"
         ])
         self.env = {
             **os.environ,
@@ -56,7 +61,7 @@ class BackendCommandTests(unittest.TestCase):
     def devices(self, names):
         (self.root / "devices.json").write_text(json.dumps({
             "keyboards": [{"name": name} for name in names],
-            "mice": [{"name": backend.DEVICE}],
+            "mice": [{"name": name} for name in SUPPORTED_KEYBOARDS],
         }))
 
     def run_action(self, action, exit_code=0):
@@ -72,6 +77,11 @@ class BackendCommandTests(unittest.TestCase):
         path = self.root / "commands.jsonl"
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
+    def assert_commands(self, expected):
+        self.assertEqual(
+            [(c["enabled"], tuple(c["devices"])) for c in self.commands()], expected
+        )
+
     def test_commands_exit_and_change_only_the_internal_keyboard(self):
         self.assertEqual(self.run_action("enable"), {
             "available": True, "disabled": False, "error": ""
@@ -81,8 +91,30 @@ class BackendCommandTests(unittest.TestCase):
         self.assertEqual((self.root / "enabled").read_text(), "False")
         self.assertFalse(self.run_action("enable")["disabled"])
         self.assertEqual((self.root / "enabled").read_text(), "True")
-        self.assertEqual([c["enabled"] for c in self.commands()], [True, False, True])
-        self.assertTrue(all(f'name = "{backend.DEVICE}"' in c["lua"] for c in self.commands()))
+        self.assert_commands([
+            (True, SUPPORTED_KEYBOARDS), (False, (USB_KEYBOARD,)), (True, SUPPORTED_KEYBOARDS)
+        ])
+
+    def test_spi_keyboard_is_supported_without_disabling_the_touchpad(self):
+        self.devices([
+            SPI_KEYBOARD, "apple-spi-touchpad", "apple-spi-keyboard-1", "keychron-k8-keychron-k8"
+        ])
+        self.assertEqual(self.run_action("enable"), {
+            "available": True, "disabled": False, "error": ""
+        })
+        self.assertEqual(self.run_action("disable"), {
+            "available": True, "disabled": True, "error": ""
+        })
+        self.assertFalse(self.run_action("enable")["disabled"])
+        self.assert_commands([
+            (True, SUPPORTED_KEYBOARDS), (False, (SPI_KEYBOARD,)), (True, SUPPORTED_KEYBOARDS)
+        ])
+
+    def test_both_supported_names_use_one_eval_without_duplicate_rules(self):
+        self.devices([SPI_KEYBOARD, USB_KEYBOARD, SPI_KEYBOARD])
+        self.assertTrue(self.run_action("disable")["disabled"])
+        self.assertFalse(self.run_action("enable")["disabled"])
+        self.assert_commands([(False, SUPPORTED_KEYBOARDS), (True, SUPPORTED_KEYBOARDS)])
 
     def test_lua_error_with_zero_exit_status_is_not_success(self):
         (self.root / "fail").touch()
@@ -93,13 +125,17 @@ class BackendCommandTests(unittest.TestCase):
         self.assertEqual((self.root / "enabled").read_text(), "True")
 
     def test_missing_keyboard_never_disables_a_mouse_or_external_device(self):
-        self.devices(["keychron-k8-keychron-k8", backend.DEVICE + "-1"])
+        self.devices([
+            "keychron-k8-keychron-k8", USB_KEYBOARD + "-1", SPI_KEYBOARD + "-1",
+            "apple-spi-touchpad", "apple-inc.-magic-keyboard", "apple-inc.-touch-bar-display",
+        ])
         state = self.run_action("disable", exit_code=1)
         self.assertFalse(state["available"])
         self.assertIn("not found", state["error"])
         self.assertEqual(self.commands(), [])
         # Enabling still clears a stale rule if the keyboard has disappeared.
         self.assertFalse(self.run_action("enable")["disabled"])
+        self.assert_commands([(True, SUPPORTED_KEYBOARDS)])
 
     def test_malformed_device_list_never_disables(self):
         (self.root / "devices.json").write_text("not json")
@@ -112,6 +148,7 @@ class BackendCommandTests(unittest.TestCase):
         self.assertFalse(state["disabled"])
         self.assertIn("Invalid keyboard list", state["error"])
         self.assertEqual((self.root / "enabled").read_text(), "True")
+        self.assert_commands([(True, SUPPORTED_KEYBOARDS)])
 
     def test_timeout_is_reported_without_assuming_a_disabled_state(self):
         (self.root / "delay").write_text("4")
@@ -125,13 +162,13 @@ class CommandFailureTests(unittest.TestCase):
     def test_missing_hyprctl_is_an_error(self):
         with patch.object(backend.subprocess, "run", side_effect=FileNotFoundError("hyprctl")):
             with self.assertRaises(backend.ControlError):
-                backend.set_enabled(False)
+                backend.set_enabled(SUPPORTED_KEYBOARDS, False)
 
     def test_nonzero_exit_status_is_an_error(self):
         result = subprocess.CompletedProcess(["hyprctl"], 1, "", "connection failed")
         with patch.object(backend.subprocess, "run", return_value=result):
             with self.assertRaisesRegex(backend.ControlError, "connection failed"):
-                backend.set_enabled(False)
+                backend.set_enabled(SUPPORTED_KEYBOARDS, False)
 
 
 if __name__ == "__main__":

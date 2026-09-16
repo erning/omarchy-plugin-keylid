@@ -13,9 +13,14 @@ section so it shares the indicators' hover-to-reveal behavior.
 
 Version 0.1 targets Omarchy 4.0, Quickshell 0.3.1 and Hyprland's Lua configuration
 API (0.56). It uses Python 3's standard library and `hyprctl`; no root access is
-needed. The target is the keyboard named
-`apple-inc.-apple-internal-keyboard-/-trackpad`, as reported by `hyprctl devices -j`.
-The trackpad, Touch Bar and external keyboards remain available.
+needed. It only targets exact matches in the `keyboards` list from
+`hyprctl devices -j` for these names:
+
+- `apple-inc.-apple-internal-keyboard-/-trackpad`
+- `apple-spi-keyboard`
+
+The trackpad, Touch Bar and external keyboards remain available. Other keyboard
+names are not supported; the tooltip reports when no supported keyboard is found.
 
 There is no persistent helper process. The service keeps state inside Omarchy's
 existing shell and runs a short-lived Python command on startup, on each click,
@@ -29,19 +34,31 @@ Run from the project directory. The destination must not already exist.
 omarchy plugin validate "$PWD"
 mkdir -p ~/.config/omarchy/plugins
 ln -sT "$PWD" ~/.config/omarchy/plugins/erning.keylid
-omarchy-shell shell rescanPlugins
+omarchy shell shell rescanPlugins
 omarchy plugin enable erning.keylid --after omarchy.indicators
 ```
 
 Reload after editing:
 
 ```bash
-omarchy-shell shell rescanPlugins
+omarchy shell shell rescanPlugins
 ```
 
-A published Git repository with `manifest.json` at its root can also be installed
-with `omarchy plugin add <git-url> --enable`, and updated with
-`omarchy plugin update erning.keylid`.
+To install from Git and place Keylid immediately after the indicators, to the
+left of the clock:
+
+```bash
+omarchy plugin add https://github.com/erning/omarchy-plugin-keylid.git
+omarchy plugin enable erning.keylid --after omarchy.indicators
+```
+
+The `add` command may offer to enable the plugin and choose a bar section; the
+following `enable` command sets its exact position. `add --enable` alone uses
+Omarchy's default position within the center section, which may be to the right
+of the clock. To reposition an existing installation, use the same `enable`
+command with `--after omarchy.indicators`.
+
+Update a Git installation with `omarchy plugin update erning.keylid`.
 
 ## Disable or uninstall
 
@@ -87,7 +104,7 @@ python3 backend.py enable
 Equivalent direct recovery command:
 
 ```bash
-hyprctl eval 'hl.device({ name = "apple-inc.-apple-internal-keyboard-/-trackpad", enabled = true })'
+hyprctl eval 'hl.device({ name = "apple-inc.-apple-internal-keyboard-/-trackpad", enabled = true }); hl.device({ name = "apple-spi-keyboard", enabled = true })'
 ```
 
 ## Development checks

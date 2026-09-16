@@ -24,7 +24,7 @@ Keylid 是独立的 Omarchy 状态栏插件，用于切换 MacBook 内置键盘�
 
 ## 必须保留的行为
 
-- 只控制 `hyprctl devices -j` 的 `keyboards` 列表中名称精确等于 `apple-inc.-apple-internal-keyboard-/-trackpad` 的设备。名称虽含 `trackpad`，目标仍是键盘；不要扩大为 Apple 设备或名称前缀匹配。
+- 只控制 `hyprctl devices -j` 的 `keyboards` 列表中名称精确等于 `apple-inc.-apple-internal-keyboard-/-trackpad` 或 `apple-spi-keyboard` 的设备。前者名称虽含 `trackpad`，目标仍是键盘；不要扩大为 Apple 设备或名称前缀匹配。
 - 使用 `hyprctl eval` 调用 `hl.device({ name = ..., enabled = ... })`。不要换回旧版 Hyprland 的配置语法，也不要写持久禁用规则。
 - 每次加载 QML 服务都先启用键盘，不持久化禁用状态。收到 `configreloaded` 时重新应用当前选择；有错误时优先启用。
 - 所有显示器上的组件共享一个 QML 服务；不要在每个 `Widget.qml` 中单独启动命令或保存切换状态。
@@ -35,12 +35,12 @@ Keylid 是独立的 Omarchy 状态栏插件，用于切换 MacBook 内置键盘�
 ## 后端的关键约束
 
 - `Service.qml` 用 `Process` 执行 `python3 -B backend.py enable|disable`，收集 JSON 并在进程退出后更新状态。空闲时没有 Python 或 `hyprctl` 进程，也没有定时轮询。
-- 禁用前先检查设备列表中的精确名称；启用时先发出恢复命令，再查询设备列表，避免查询失败阻止恢复。
+- 禁用前先检查设备列表中的精确名称，只对匹配的键盘发出命令；启用时先在一次 `hyprctl eval` 中恢复两个受支持的设备名称，再查询设备列表，避免查询失败阻止恢复。
 - 命令超时或报错不证明设备没有发生变化。后端结果中的 `disabled: null` 表示状态未知；QML 保留错误提示，下一次点击优先启用。
 - `hyprctl` 退出码为 0 时也可能在标准输出中报告 Lua 错误；必须同时验证回复为 `ok`。
 - Hyprland 0.56.2 的设备列表不提供键盘启用状态。QML 中的 `disabled` 用于界面显示和配置重载，表示最后确认的设置；有错误时状态可能未知。界面状态不是独立读取的硬件状态。
 - `Service.qml` 的请求异步完成，忙碌期间只为 `reapply` 保留待处理标记。IPC 调用返回成功不代表键盘操作完成，应继续查看 `busy` 和 `error`。
-- 正常卸载通过 `Quickshell.execDetached` 直接发出一次 `hyprctl` 启用命令，不依赖可能已被删除的插件目录。此处的设备名称需与 `backend.py` 中的 `DEVICE` 保持一致。
+- 正常卸载通过 `Quickshell.execDetached` 直接发出一次 `hyprctl` 启用命令，不依赖可能已被删除的插件目录。此处的两个设备名称需与 `backend.py` 中的 `DEVICES` 保持一致。
 - Quickshell 销毁 `Process` 时可能强制结束正在运行的命令。卸载与命令重叠、shell 崩溃或 Hyprland 无响应时，不保证恢复；保留手动恢复入口，不额外实现跨进程协调。
 
 ## 验证
@@ -60,7 +60,7 @@ git diff --check
 
 ## 本机安装与调试
 
-安装、禁用和卸载命令见 README。开发安装可通过 `~/.config/omarchy/plugins/erning.keylid` 符号链接指向仓库；修改前用 `readlink` 核对，移动开发目录时同步检查链接目标。
+安装、禁用和卸载命令见 README。Git 安装后使用 `omarchy plugin enable erning.keylid --after omarchy.indicators` 将图标放在 indicators 后面、时钟左边；单独使用 `add --enable` 只采用中央区域的默认位置。开发安装可通过 `~/.config/omarchy/plugins/erning.keylid` 符号链接指向仓库；修改前用 `readlink` 核对，移动开发目录时同步检查链接目标。
 
 涉及桌面配置、安装或重载时，使用可用的 `omarchy` skill。`/usr/share/omarchy/` 只作为源码参考，不修改包管理器维护的文件；用户配置位于 `~/.config/omarchy/`。
 

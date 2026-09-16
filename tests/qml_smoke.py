@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import time
 
-from test_backend import FAKE_HYPRCTL, ROOT, backend
+from test_backend import FAKE_HYPRCTL, ROOT, SUPPORTED_KEYBOARDS
 
 
 QML = r'''
@@ -168,7 +168,7 @@ ShellRoot {
 '''
 
 
-def main():
+def check_keyboard(device):
     with tempfile.TemporaryDirectory(prefix="keylid-qml-") as temporary:
         root = Path(temporary)
         for name in ("Ui", "Commons"):
@@ -177,7 +177,7 @@ def main():
         fake = root / "hyprctl"
         fake.write_text(FAKE_HYPRCTL)
         fake.chmod(0o755)
-        (root / "devices.json").write_text(json.dumps({"keyboards": [{"name": backend.DEVICE}]}))
+        (root / "devices.json").write_text(json.dumps({"keyboards": [{"name": device}]}))
         (root / "fail").touch()
         env = {
             **os.environ,
@@ -205,12 +205,15 @@ def main():
             if (root / "enabled").exists() and (root / "enabled").read_text() == "True":
                 commands = [json.loads(line) for line in (root / "commands.jsonl").read_text().splitlines()]
                 assert [c["enabled"] for c in commands] == [True, False, True, False, True, False, False, True]
-                assert all(f'name = "{backend.DEVICE}"' in c["lua"] for c in commands)
-                print("Keyboard restored after QML service destruction.")
+                for command in commands:
+                    expected = SUPPORTED_KEYBOARDS if command["enabled"] else (device,)
+                    assert tuple(command["devices"]) == expected, command
+                print(f"{device} restored after QML service destruction.")
                 return
             time.sleep(0.05)
         raise AssertionError("Keyboard was not restored after unloading the QML service")
 
 
 if __name__ == "__main__":
-    main()
+    for device in SUPPORTED_KEYBOARDS:
+        check_keyboard(device)

@@ -7,7 +7,10 @@ import subprocess
 import sys
 
 
-DEVICE = "apple-inc.-apple-internal-keyboard-/-trackpad"
+DEVICES = (
+    "apple-inc.-apple-internal-keyboard-/-trackpad",
+    "apple-spi-keyboard",
+)
 COMMAND_TIMEOUT = 3
 
 
@@ -28,20 +31,24 @@ def hyprctl(*args):
     return result.stdout.strip()
 
 
-def set_enabled(enabled):
+def set_enabled(devices, enabled):
     value = "true" if enabled else "false"
-    reply = hyprctl("eval", f'hl.device({{ name = "{DEVICE}", enabled = {value} }})')
+    command = "; ".join(
+        f'hl.device({{ name = "{name}", enabled = {value} }})' for name in devices
+    )
+    reply = hyprctl("eval", command)
     # hyprctl can report a Lua error in stdout, even with exit status zero.
     if reply != "ok":
         raise ControlError(reply or "Hyprland did not acknowledge the change")
 
 
-def keyboard_available():
+def keyboard_devices():
     try:
         keyboards = json.loads(hyprctl("devices", "-j"))["keyboards"]
         if not isinstance(keyboards, list):
             raise ValueError("keyboards is not a list")
-        return any(k.get("name") == DEVICE for k in keyboards)
+        names = {k.get("name") for k in keyboards}
+        return tuple(name for name in DEVICES if name in names)
     except (ValueError, KeyError, AttributeError, TypeError) as exc:
         raise ControlError("Invalid keyboard list from Hyprland") from exc
 
@@ -51,13 +58,14 @@ def apply(action):
     try:
         if action == "enable":
             # Recovery must not depend on a successful device-list query.
-            set_enabled(True)
+            set_enabled(DEVICES, True)
             state["disabled"] = False
-        state["available"] = keyboard_available()
+        devices = keyboard_devices()
+        state["available"] = bool(devices)
         if action == "disable":
             if not state["available"]:
                 raise ControlError("Internal keyboard not found")
-            set_enabled(False)
+            set_enabled(devices, False)
             state["disabled"] = True
     except ControlError as exc:
         state["error"] = str(exc)

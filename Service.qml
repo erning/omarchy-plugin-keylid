@@ -94,10 +94,11 @@ Item {
   Component.onDestruction: {
     root.stopping = true
     // Best effort only. Call hyprctl directly so removing the plugin directory
-    // cannot remove the helper before it starts. Keep the name in sync with backend.py.
+    // cannot remove the helper before it starts. Keep the names in sync with backend.py.
     Quickshell.execDetached([
       "hyprctl", "eval",
-      'hl.device({ name = "apple-inc.-apple-internal-keyboard-/-trackpad", enabled = true })'
+      'hl.device({ name = "apple-inc.-apple-internal-keyboard-/-trackpad", enabled = true }); '
+        + 'hl.device({ name = "apple-spi-keyboard", enabled = true })'
     ])
   }
 }
