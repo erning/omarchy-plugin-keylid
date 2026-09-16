@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "erning.keylid",
+  "name": "Keylid",
+  "version": "0.1.0",
+  "author": "Erning",
+  "description": "Toggle the MacBook internal keyboard from the bar.",
+  "kinds": ["bar-widget", "service"],
+  "entryPoints": {
+    "barWidget": "Widget.qml",
+    "service": "Service.qml"
+  },
+  "barWidget": {
+    "displayName": "Keylid",
+    "description": "Enable or disable the MacBook internal keyboard.",
+    "category": "Hardware",
+    "allowMultiple": false,
+    "defaultSection": "center"
+  }
+}
