@@ -9,7 +9,7 @@ Item {
   property var shell: null
   property bool available: false
   property bool disabled: false
-  property bool busy: true
+  property bool busy: false
   property string error: ""
   property bool ready: false
   property bool refreshPending: false
@@ -19,70 +19,58 @@ Item {
 
   function request(action) {
     if (root.stopping) return
-    if (!controller.running) {
-      // Restart always starts by enabling the keyboard.
-      root.busy = true
-      root.ready = false
-      root.error = ""
-      controller.stdinEnabled = true
-      controller.running = true
-      startupTimer.restart()
-      return
-    }
-    if (!root.ready || root.busy) {
+    if (root.busy) {
       if (action === "reapply") root.refreshPending = true
       return
     }
+    if (action === "reapply") action = root.disabled && !root.error ? "disable" : "enable"
     root.busy = true
-    controller.write(JSON.stringify({ action: action }) + "\n")
+    root.error = ""
+    controller.command = ["python3", "-B", root.backendPath, action]
+    commandTimer.restart()
+    controller.running = true
   }
 
-  function toggle() { request(root.error || !root.available ? "enable" : "toggle") }
+  function toggle() { request(root.error || !root.available || root.disabled ? "enable" : "disable") }
   function enable() { request("enable") }
 
-  function acceptState(data) {
-    let state
-    try { state = JSON.parse(data) } catch (e) {
-      root.error = "Invalid response from keyboard controller"
-      root.busy = false
-      return
+  function finish(exitCode, output) {
+    if (root.stopping || !root.busy) return
+    commandTimer.stop()
+    try {
+      let state = JSON.parse(output)
+      root.available = state.available === true
+      root.disabled = state.disabled === true
+      root.error = String(state.error || "")
+      if (exitCode !== 0 && !root.error) root.error = "Keyboard command failed"
+    } catch (e) {
+      root.error = "Invalid response from keyboard command"
     }
-    startupTimer.stop()
     root.ready = true
-    root.available = state.available === true
-    root.disabled = state.disabled === true
-    root.error = String(state.error || "")
     root.busy = false
     if (root.refreshPending) {
       root.refreshPending = false
-      root.request("reapply")
+      Qt.callLater(function() { root.request("reapply") })
     }
   }
 
   Process {
     id: controller
-    command: ["python3", "-B", root.backendPath, "serve"]
-    stdinEnabled: true
-    running: true
-    stdout: SplitParser { onRead: data => root.acceptState(data) }
+    stdout: StdioCollector { id: commandOutput }
     stderr: SplitParser { onRead: data => console.warn("Keylid:", data) }
-    onExited: function(exitCode) {
-      root.ready = false
-      root.busy = false
-      if (!root.stopping) root.error = "Keyboard controller stopped; click to reconnect"
-    }
+    onExited: function(exitCode) { root.finish(exitCode, commandOutput.text) }
   }
 
   Timer {
-    id: startupTimer
-    interval: 12000
-    running: true
+    id: commandTimer
+    interval: 8000
     onTriggered: {
-      if (!root.ready) {
-        root.error = "Keyboard controller did not start"
-        root.busy = false
-        controller.running = false
-      }
+      // Also handles a command that could not be started at all.
+      root.error = "Keyboard command timed out or could not start"
+      root.ready = true
+      root.busy = false
+      root.refreshPending = false
+      controller.running = false
     }
   }
 
@@ -102,9 +90,14 @@ Item {
     function toggle(): void { root.toggle() }
   }
 
+  Component.onCompleted: root.enable()
   Component.onDestruction: {
     root.stopping = true
-    // EOF asks the independent worker to restore the keyboard and exit.
-    controller.stdinEnabled = false
+    // Best effort only. Call hyprctl directly so removing the plugin directory
+    // cannot remove the helper before it starts. Keep the name in sync with backend.py.
+    Quickshell.execDetached([
+      "hyprctl", "eval",
+      'hl.device({ name = "apple-inc.-apple-internal-keyboard-/-trackpad", enabled = true })'
+    ])
   }
 }

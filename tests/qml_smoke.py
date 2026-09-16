@@ -19,6 +19,7 @@ ShellRoot {
   property var service: null
   property var widget: null
   property int phase: 0
+  property bool recoveredFromError: false
 
   Window {
     id: testWindow
@@ -72,7 +73,7 @@ ShellRoot {
     repeat: true
     onTriggered: {
       if (!scene.service || !scene.service.ready || scene.service.busy) return
-      if (scene.phase !== 6) check(scene.service.error === "", scene.service.error)
+      if (scene.phase !== 4 && scene.phase !== 6) check(scene.service.error === "", scene.service.error)
       check(scene.service.available, "Keyboard not found")
       if (scene.phase === 0) {
         check(!scene.widget.locked, "Widget starts locked")
@@ -95,10 +96,22 @@ ShellRoot {
         scene.phase = 4
         scene.service.toggle()
       } else if (scene.phase === 4) {
+        if (!scene.recoveredFromError) {
+          check(scene.service.error.indexOf("Lua error") >= 0, "Command failure was not reported")
+          check(scene.widget.visible, "A command error must keep the widget visible")
+          scene.phase = 40
+          scene.service.toggle()
+          return
+        }
+        check(scene.service.error === "", scene.service.error)
         check(scene.widget.locked, "Widget did not follow the service")
         check(scene.widget.visible, "Disabled keyboard must remain visible without hover")
         scene.phase = 5
         scene.service.enable()
+      } else if (scene.phase === 40) {
+        check(!scene.widget.locked, "A toggle after an uncertain failure must enable")
+        scene.recoveredFromError = true
+        scene.phase = 3
       } else if (scene.phase === 5) {
         check(!scene.widget.locked, "Widget did not show enabled state")
         check(!scene.widget.visible, "Re-enabling should collapse the widget without hover")
@@ -121,6 +134,8 @@ ShellRoot {
         fakeBar.vertical = false
         scene.phase = 9
         scene.service.toggle()
+        // A config reload during a command should reapply after it completes.
+        scene.service.request("reapply")
       } else if (scene.phase === 9) {
         check(scene.widget.locked, "Second disable failed")
         scene.phase = 10
@@ -163,6 +178,7 @@ def main():
         fake.write_text(FAKE_HYPRCTL)
         fake.chmod(0o755)
         (root / "devices.json").write_text(json.dumps({"keyboards": [{"name": backend.DEVICE}]}))
+        (root / "fail").touch()
         env = {
             **os.environ,
             "QT_QPA_PLATFORM": "offscreen",
@@ -183,10 +199,13 @@ def main():
         assert result.returncode == 0, result.returncode
         assert "KEYLID_SMOKE_OK" in output
         assert "KEYLID_SMOKE_FAILED" not in output
-        # The actual Quickshell destructor must leave the fake keyboard enabled.
+        # Normal, idle unload should make one best-effort recovery attempt.
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             if (root / "enabled").exists() and (root / "enabled").read_text() == "True":
+                commands = [json.loads(line) for line in (root / "commands.jsonl").read_text().splitlines()]
+                assert [c["enabled"] for c in commands] == [True, False, True, False, True, False, False, True]
+                assert all(f'name = "{backend.DEVICE}"' in c["lua"] for c in commands)
                 print("Keyboard restored after QML service destruction.")
                 return
             time.sleep(0.05)

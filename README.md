@@ -6,7 +6,7 @@ Hover over the center of the bar, near the clock, to reveal the keyboard icon.
 Click it to disable or enable the internal keyboard. While the keyboard is
 enabled, the icon collapses when you leave the bar, like Omarchy's indicators.
 When disabled or an error occurs, the icon stays visible in the theme's attention
-color. Right-click always enables the keyboard. All monitors share one controller.
+color. Right-click always enables the keyboard. All monitors share one QML service.
 
 The widget uses Omarchy's indicator font size and spacing. Keep it in the center
 section so it shares the indicators' hover-to-reveal behavior.
@@ -16,6 +16,10 @@ API (0.56). It uses Python 3's standard library and `hyprctl`; no root access is
 needed. The target is the keyboard named
 `apple-inc.-apple-internal-keyboard-/-trackpad`, as reported by `hyprctl devices -j`.
 The trackpad, Touch Bar and external keyboards remain available.
+
+There is no persistent helper process. The service keeps state inside Omarchy's
+existing shell and runs a short-lived Python command on startup, on each click,
+and when Hyprland reloads its configuration.
 
 ## Local installation
 
@@ -47,9 +51,9 @@ omarchy plugin enable erning.keylid
 omarchy plugin remove erning.keylid
 ```
 
-Disabling or removing the plugin closes its controller connection. The worker
-restores the keyboard before exiting. Removing a symlink installation only
-removes the link; the project directory stays intact.
+Disabling or removing the plugin makes one best-effort attempt to enable the
+keyboard. Removing a symlink installation only removes the link; the project
+directory stays intact.
 
 ## State and recovery
 
@@ -62,10 +66,10 @@ The icon shows the last acknowledged Keylid command, not an independently read
 hardware state. Avoid changing this same device through another tool while
 Keylid is active.
 
-The worker survives destruction of Quickshell's managed process and restores
-on connection loss, including plugin unload. A session lock serializes workers
-during reloads. Restoration requires a responsive Hyprland instance; killing the
-worker itself with SIGKILL cannot run cleanup.
+Normal unload sends a detached `hyprctl` enable command. There is no watchdog,
+session lock or cleanup retry. Recovery is not guaranteed if the shell crashes,
+Hyprland is unresponsive, or unload overlaps a running command. If needed, use
+one of the recovery commands below.
 
 To request recovery through the running plugin:
 
