@@ -94,7 +94,7 @@ Item {
   }
 
   IpcHandler {
-    target: "keylid"
+    target: "erning.keylid"
     function status(): string {
       return JSON.stringify({ available: root.available, disabled: root.disabled, busy: root.busy, error: root.error })
     }

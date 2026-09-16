@@ -65,8 +65,8 @@ worker itself with SIGKILL cannot run cleanup.
 To request recovery through the running plugin:
 
 ```bash
-omarchy-shell keylid enable
-omarchy-shell keylid status
+omarchy shell erning.keylid enable
+omarchy shell erning.keylid status
 ```
 
 If the plugin is unavailable, run from the project directory:
