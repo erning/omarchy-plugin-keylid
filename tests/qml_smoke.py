@@ -20,6 +20,13 @@ ShellRoot {
   property var widget: null
   property int phase: 0
 
+  Window {
+    id: testWindow
+    visible: true
+    width: 120
+    height: 40
+  }
+
   QtObject {
     id: fakeBar
     property var shell: QtObject {
@@ -31,6 +38,8 @@ ShellRoot {
     property color urgent: "#ff5555"
     property string fontFamily: "monospace"
     property bool foregroundAnimationEnabled: false
+    property bool centerSectionRevealHeld: false
+    property bool centerHoverRevealSuppressed: false
     function registerClickTarget(item) {}
     function unregisterClickTarget(item) {}
     function showTooltip(item, text) {}
@@ -51,7 +60,9 @@ ShellRoot {
     check(!!scene.service, "Service creation failed")
     let widgetComponent = Qt.createComponent("@ROOT@/Widget.qml")
     check(widgetComponent.status === Component.Ready, widgetComponent.errorString())
-    scene.widget = widgetComponent.createObject(scene, { bar: fakeBar })
+    // Keep the offscreen platform's default pointer away from the test widget;
+    // hover is driven explicitly through the bar properties below.
+    scene.widget = widgetComponent.createObject(testWindow.contentItem, { bar: fakeBar, x: 60 })
     check(!!scene.widget, "Widget creation failed")
   }
 
@@ -61,23 +72,58 @@ ShellRoot {
     repeat: true
     onTriggered: {
       if (!scene.service || !scene.service.ready || scene.service.busy) return
-      check(scene.service.error === "", scene.service.error)
+      if (scene.phase !== 6) check(scene.service.error === "", scene.service.error)
       check(scene.service.available, "Keyboard not found")
       if (scene.phase === 0) {
         check(!scene.widget.locked, "Widget starts locked")
+        check(!scene.widget.visible && scene.widget.implicitWidth === 0,
+          "Enabled keyboard should collapse without leaving a horizontal gap")
+        fakeBar.centerSectionRevealHeld = true
         scene.phase = 1
-        scene.service.toggle()
       } else if (scene.phase === 1) {
-        check(scene.widget.locked, "Widget did not follow the service")
+        check(scene.widget.visible && scene.widget.implicitWidth > 0,
+          "Hovering the center of the bar should reveal the widget")
+        fakeBar.centerHoverRevealSuppressed = true
         scene.phase = 2
-        scene.service.enable()
       } else if (scene.phase === 2) {
-        check(!scene.widget.locked, "Widget did not show enabled state")
+        check(!scene.widget.visible, "Widget should respect suppressed center hover")
+        fakeBar.centerHoverRevealSuppressed = false
+        fakeBar.centerSectionRevealHeld = false
         scene.phase = 3
-        scene.service.toggle()
       } else if (scene.phase === 3) {
-        check(scene.widget.locked, "Second disable failed")
+        check(!scene.widget.visible, "Leaving the bar should collapse the widget")
         scene.phase = 4
+        scene.service.toggle()
+      } else if (scene.phase === 4) {
+        check(scene.widget.locked, "Widget did not follow the service")
+        check(scene.widget.visible, "Disabled keyboard must remain visible without hover")
+        scene.phase = 5
+        scene.service.enable()
+      } else if (scene.phase === 5) {
+        check(!scene.widget.locked, "Widget did not show enabled state")
+        check(!scene.widget.visible, "Re-enabling should collapse the widget without hover")
+        scene.service.error = "Test error"
+        scene.phase = 6
+      } else if (scene.phase === 6) {
+        check(scene.widget.visible, "An error must keep the widget visible")
+        scene.service.error = ""
+        fakeBar.vertical = true
+        scene.phase = 7
+      } else if (scene.phase === 7) {
+        check(!scene.widget.visible && scene.widget.implicitHeight === 0,
+          "Enabled keyboard should collapse without leaving a vertical gap")
+        fakeBar.centerSectionRevealHeld = true
+        scene.phase = 8
+      } else if (scene.phase === 8) {
+        check(scene.widget.visible && scene.widget.implicitHeight > 0,
+          "Center hover should also reveal the widget in a vertical bar")
+        fakeBar.centerSectionRevealHeld = false
+        fakeBar.vertical = false
+        scene.phase = 9
+        scene.service.toggle()
+      } else if (scene.phase === 9) {
+        check(scene.widget.locked, "Second disable failed")
+        scene.phase = 10
         scene.widget.destroy()
         scene.service.destroy()
         scene.widget = null
@@ -121,6 +167,7 @@ def main():
             **os.environ,
             "QT_QPA_PLATFORM": "offscreen",
             "QT_QPA_PLATFORMTHEME": "",
+            "QT_QUICK_BACKEND": "software",
             "PATH": str(root) + os.pathsep + os.environ["PATH"],
             "XDG_RUNTIME_DIR": str(root),
             "XDG_CACHE_HOME": str(root / "cache"),

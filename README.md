@@ -2,9 +2,14 @@
 
 A small Omarchy bar plugin that toggles the MacBook internal keyboard.
 
-Click the keyboard icon to disable or enable it. The disabled state uses a
-keyboard-off icon and the theme's attention color. Right-click always enables
-the keyboard. All monitors share one controller.
+Hover over the center of the bar, near the clock, to reveal the keyboard icon.
+Click it to disable or enable the internal keyboard. While the keyboard is
+enabled, the icon collapses when you leave the bar, like Omarchy's indicators.
+When disabled or an error occurs, the icon stays visible in the theme's attention
+color. Right-click always enables the keyboard. All monitors share one controller.
+
+The widget uses Omarchy's indicator font size and spacing. Keep it in the center
+section so it shares the indicators' hover-to-reveal behavior.
 
 Version 0.1 targets Omarchy 4.0, Quickshell 0.3.1 and Hyprland's Lua configuration
 API (0.56). It uses Python 3's standard library and `hyprctl`; no root access is
